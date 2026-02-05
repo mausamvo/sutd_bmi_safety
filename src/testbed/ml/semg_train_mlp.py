@@ -9,6 +9,7 @@ from sklearn.preprocessing import LabelEncoder
 from semg_model import SEMGMLP, extract_features, WINDOW_SIZE, SEMGDataset
 import joblib
 import os
+import argparse
 
 BATCH_SIZE = 10
 EPOCHS = 100
@@ -19,7 +20,12 @@ if os.path.exists('semg_mlp.pth'):
     exit(0)
     
 # 1. Load and preprocess data
-df = pd.read_csv('combined.csv')
+# df = pd.read_csv('combined.csv')
+parser = argparse.ArgumentParser()
+parser.add_argument("--data", default="combined.csv")
+args = parser.parse_args()
+
+df = pd.read_csv(args.data)
 
 # Group every 600 rows as one sample
 def create_samples(df, window_size):
