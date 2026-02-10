@@ -35,6 +35,7 @@
 #include "WProgram.h"
 #endif
 
+#include <SoftwareSerial.h>
 #include "EMGFilters.h"
 
 #define _DEBUG 0
@@ -77,6 +78,7 @@ CycleBuf_t rectifiedAcBuf[ARR_SIZE(SensorInputPins)];
 // you can see the curves.
 
 EMGFilters myFilter[ARR_SIZE(SensorInputPins)];
+SoftwareSerial mySerial(0, 1);
 
 // Set the input frequency.
 //
@@ -95,7 +97,6 @@ NOTCH_FREQUENCY humFreq = NOTCH_FREQ_60HZ;
 void setup()
 {
   /* add setup code here */
-
   // initialization
   for (int i = 0; i < ARR_SIZE(SensorInputPins); i++)
   {
@@ -112,6 +113,7 @@ void setup()
 
   // open serial
   SerialToUSB.begin(115200);
+  mySerial.begin(115200);
 }
 
 char buffer[256];
@@ -150,6 +152,7 @@ void loop()
 #if !_DEBUG
   SerialToUSB.write((const uint8_t *)buffer, index);
 #endif
+  mySerial.write(index);
   index = 0;
 
   unsigned long timeElapsed = micros() - timeStamp;
