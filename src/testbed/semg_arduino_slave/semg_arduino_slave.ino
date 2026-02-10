@@ -78,7 +78,7 @@ CycleBuf_t rectifiedAcBuf[ARR_SIZE(SensorInputPins)];
 // you can see the curves.
 
 EMGFilters myFilter[ARR_SIZE(SensorInputPins)];
-SoftwareSerial mySerial(1, 0);
+SoftwareSerial mySerial(0, 1);
 
 // Set the input frequency.
 //
@@ -110,8 +110,8 @@ void setup()
       rectifiedAcBuf[i].buf[j] = 0;
     }
   }
-  pinMode(1, INPUT);
-  pinMode(0, OUTPUT);
+  pinMode(0, INPUT);
+  pinMode(1, OUTPUT);
   // open serial
   SerialToUSB.begin(115200);
   mySerial.begin(115200);
