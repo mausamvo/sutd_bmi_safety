@@ -10,5 +10,6 @@ dependencies = [
     "python-socketio>=5.13.0",
     "scikit-learn>=1.7.2",
     "seaborn>=0.13.2",
+    "torch>=2.10.0",
     "websocket-client>=1.8.0",
 ]

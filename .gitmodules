@@ -1,3 +1,3 @@
 [submodule "src/testbed/sutd_bmi_safety_data"]
 	path = src/testbed/sutd_bmi_safety_data
-	url = https://github.com/adjscent/sutd_bmi_safety_data
+	url = https://github.com/mausamvo/sutd_bmi_safety_data
