@@ -14,7 +14,7 @@ EPOCHS = 50
 LEARNING_RATE = 0.001
 
 # Load and preprocess data
-df = pd.read_csv("combined.csv")
+df = pd.read_csv("..\sutd_bmi_safety_data\combined.csv ")
 
 
 def create_samples(df, window_size):

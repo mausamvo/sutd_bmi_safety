@@ -2,7 +2,7 @@ import os
 import sys
 import csv
 
-RANGES = 300
+RANGES = 100
 
 def main():
     if len(sys.argv) < 2:
