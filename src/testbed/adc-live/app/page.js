@@ -36,25 +36,19 @@ export default function Page() {
     { ref: ch3Ref, name: "ch3" },
   ];
 
-  const [maxChannels, setMaxChannels] = useState(4); // Maximum number of channels in download
+  const [maxChannels, setMaxChannels] = useState(4);
   const [maxY, setMaxY] = useState(500);
   const [minY, setMinY] = useState(-150);
   const socketRef = useRef();
+  const dataPointsRef = useRef([]);
   const [action, setAction] = useState("nothing");
   const [extraFilename, setExtraFilename] = useState("");
-  const [duration, setDuration] = useState(1);
+  const [duration, setDuration] = useState(1); // controls both view and record
+  const [recording, setRecording] = useState(false);
+  const [countdown, setCountdown] = useState(0);
   const [paused, setPaused] = useState(false);
   const [showNotification, setShowNotification] = useState(false);
-  const [dataPoints, setDataPoints] = useState(() => {
-    const now = Date.now();
-    return Array.from({ length: duration }, (_, i) => ({
-      timestamp: now - (duration - 1 - i) * 1000,
-      ch0: { a: 0, e: 0 },
-      ch1: { a: 0, e: 0 },
-      ch2: { a: 0, e: 0 },
-      ch3: { a: 0, e: 0 },
-    }));
-  });
+  const [dataPoints, setDataPoints] = useState([]);
 
   useEffect(() => {
     socketRef.current = io();
@@ -64,7 +58,10 @@ export default function Page() {
       const entry = { timestamp: Date.now(), ...d };
       setDataPoints((prev) => {
         const cutoff = Date.now() - duration * 1000;
-        return [entry, ...prev].filter((x) => x.timestamp >= cutoff);
+        const next = [entry, ...prev].filter((x) => x.timestamp >= cutoff);
+        // Always append to ref so recording captures fresh data from click
+        dataPointsRef.current = [...dataPointsRef.current, entry];
+        return next;
       });
     });
     return () => socket.disconnect();
@@ -164,8 +161,8 @@ export default function Page() {
 
   const downloadAll = () => {
     const now = Date.now();
-    // CSV
-    // Build CSV header and rows based on maxChannels
+    const data = dataPointsRef.current;
+
     const channelHeaders = [];
     for (let i = 0; i < maxChannels; i++) {
       channelHeaders.push(`Ch${i} Act`, `Ch${i} Env`);
@@ -174,7 +171,7 @@ export default function Page() {
 
     const rows = [
       ["Timestamp", ...channelHeaders],
-      ...dataPoints.map((d) => {
+      ...data.map((d) => {
         const row = [new Date(d.timestamp).toISOString()];
         for (let i = 0; i < maxChannels; i++) {
           row.push(d[`ch${i}`]?.a || 0, d[`ch${i}`]?.e || 0);
@@ -188,10 +185,7 @@ export default function Page() {
     const csvUrl = URL.createObjectURL(csvBlob);
     const csvLink = document.createElement("a");
     csvLink.href = csvUrl;
-    csvLink.download = `${now}_${createActionFilename(
-      action,
-      extraFilename
-    )}_adc.csv`;
+    csvLink.download = `${now}_${createActionFilename(action, extraFilename)}_adc.csv`;
     csvLink.click();
 
     charts.slice(0, maxChannels).forEach(({ ref, name }) => {
@@ -199,22 +193,29 @@ export default function Page() {
         const url = ref.current.toBase64Image();
         const a = document.createElement("a");
         a.href = url;
-        a.download = `${now}_${createActionFilename(
-          action,
-          extraFilename
-        )}_${name}.png`;
+        a.download = `${now}_${createActionFilename(action, extraFilename)}_${name}.png`;
         a.click();
       }
     });
   };
 
-  const downloadLater = async () => {
-    await new Promise((res) => setTimeout(res, duration)); // Wait another 5s
-    downloadAll(); // Trigger CSV + PNGs
-
-    // Show notification
+  const recordAndDownload = async () => {
+    dataPointsRef.current = []; // silently reset ref to ensure recording starts fresh from click
+    setRecording(true);
+    let remaining = duration;
+    setCountdown(remaining);
+    const interval = setInterval(() => {
+      remaining -= 1;
+      setCountdown(remaining);
+      if (remaining <= 0) clearInterval(interval);
+    }, 1000);
+    await new Promise((res) => setTimeout(res, duration * 1000));
+    clearInterval(interval);
+    downloadAll();
     setShowNotification(true);
     setTimeout(() => setShowNotification(false), 3000);
+    setRecording(false);
+    setCountdown(0);
   };
 
   return (
@@ -238,25 +239,54 @@ export default function Page() {
 
       <h2>Live ADC (last {duration}s)</h2>
       <div style={{ marginBottom: 16, marginTop: 16 }}>
+        <style>{`
+          @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0; }
+          }
+          .recording-dot {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            background: red;
+            border-radius: 50%;
+            animation: blink 1s infinite;
+            margin-right: 8px;
+            vertical-align: middle;
+          }
+        `}</style>
         <label>
           Window (s):
           <input
             type="number"
             min="1"
-            max="10"
+            max="60"
             value={duration}
-            onChange={(e) => setDuration(e.target.value)}
+            onChange={(e) => setDuration(Number(e.target.value))}
             style={{ width: 50, marginLeft: 8 }}
+            disabled={recording}
           />
         </label>
-        <button onClick={() => setPaused((p) => !p)} style={{ marginLeft: 16 }}>
+        <button
+          onClick={recordAndDownload}
+          disabled={recording}
+          style={{ marginLeft: 16 }}
+        >
+          {recording ? (
+            <>
+              <span className="recording-dot" />
+              <span style={{ color: "red" }}>{`Recording... ${countdown}s left`}</span>
+            </>
+          ) : (
+            `Record & Download (${duration}s)`
+          )}
+        </button>
+        <button
+          onClick={() => setPaused((p) => !p)}
+          style={{ marginLeft: 16 }}
+          disabled={recording}
+        >
           {paused ? "Resume" : "Pause"}
-        </button>
-        <button onClick={downloadAll} style={{ marginLeft: 16 }}>
-          Download CSV + PNGs
-        </button>
-        <button onClick={downloadLater} style={{ marginLeft: 16 }}>
-          Download All after {duration}s
         </button>
         <label style={{ marginLeft: 16 }}>
           Filename:
@@ -264,6 +294,7 @@ export default function Page() {
             value={action}
             onChange={(e) => setAction(e.target.value)}
             style={{ width: 100, marginLeft: 8 }}
+            disabled={recording}
           >
             <option value="disconnected">disconnected</option>
             <option value="nothing">nothing</option>
@@ -283,7 +314,8 @@ export default function Page() {
             value={extraFilename}
             onChange={(e) => setExtraFilename(e.target.value)}
             style={{ width: 100, marginLeft: 8 }}
-          ></input>
+            disabled={recording}
+          />
         </label>
         <label style={{ marginLeft: 16 }}>
           Max Channels:
@@ -294,7 +326,8 @@ export default function Page() {
             value={maxChannels}
             onChange={(e) => setMaxChannels(e.target.value)}
             style={{ width: 30, marginLeft: 8 }}
-          ></input>
+            disabled={recording}
+          />
         </label>
         <label style={{ marginLeft: 16 }}>
           Max Y:
