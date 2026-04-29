@@ -1,0 +1,13 @@
+actual,predicted,count
+pronation,nothing,9
+left,supination,9
+open,supination,8
+flexion,left,7
+extension,right,7
+open,left,5
+grasp,left,5
+pronation,supination,5
+supination,right,3
+extension,pronation,3
+extension,left,3
+right,extension,3
