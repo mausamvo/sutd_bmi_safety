@@ -497,6 +497,7 @@ export default function Page() {
             border: "none",
             padding: "8px 12px",
             borderRadius: 8,
+            color: "#111111",
             cursor: "pointer",
           }}
         >
@@ -648,6 +649,7 @@ export default function Page() {
             border: "1px solid #b8d8f2",
             borderRadius: 12,
             padding: "1rem",
+            color: "#111111",
           }}
         >
           <div>

@@ -14,19 +14,21 @@ def main():
         print('Provided path is not a directory.')
         sys.exit(1)
 
-    files = [f for f in os.listdir(folder_path) if f.endswith('.csv')]
+    # Get all CSV files in the folder (including subdirectories), excluding combined.csv
+    files = []
+    for root, dirs, filenames in os.walk(folder_path):
+        for f in filenames:
+            if f.endswith('.csv') and f != 'combined.csv':
+                files.append(os.path.join(root, f))
     if not files:
         print('No CSV files found in the folder.')
         sys.exit(1)
+    files.sort()
 
     combined_rows = []
     header = None
 
-    for file in files:
-        if file == 'combined.csv':
-            print(f'Skipping file "{file}" as it is the output file.')
-            continue
-        file_path = os.path.join(folder_path, file)
+    for file_path in files:
         with open(file_path, 'r', newline='', encoding='utf-8') as f:
             reader = list(csv.reader(f))
             if not reader:
@@ -41,7 +43,7 @@ def main():
                 if len(chunk) == RANGES:
                     combined_rows.extend(chunk)
                 else:
-                    print(f'File "{file}" chunk starting at row {i + 1} does not have {RANGES} rows, skipping.')
+                    print(f'File "{file_path}" chunk starting at row {i + 1} does not have {RANGES} rows, skipping.')
 
     output_path = os.path.abspath(os.path.join(folder_path, '..', 'combined.csv'))
     with open(output_path, 'w', newline='', encoding='utf-8') as f:

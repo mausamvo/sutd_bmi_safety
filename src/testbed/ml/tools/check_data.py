@@ -2,8 +2,14 @@ import os
 import sys
 import re
 
+# recursive version to handle subdirectories
 def get_csv_files(folder):
-    return [f for f in os.listdir(folder) if f.endswith('.csv')]
+    files = []
+    for root, dirs, filenames in os.walk(folder):
+        for f in filenames:
+            if f.endswith('.csv'):
+                files.append(f)
+    return files
 
 def extract_action(filename):
     match = re.search(r'_(.*?)_', filename)
