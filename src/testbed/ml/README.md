@@ -1,7 +1,7 @@
 
 # Real-Time sEMG Classification System
 
-This project implements a complete machine learning pipeline for the classification of surface electromyography (sEMG) signals in real-time using a neural network model. It is designed to process signals from two sEMG channels and detect physical actions or gestures based on envelope and activation levels. The system reads training data from a CSV file and performs real-time inference using WebSocket streaming.
+This project implements a complete machine learning pipeline for the classification of surface electromyography (sEMG) signals in real-time using a neural network model. The offline pipeline now uses four activation channels and hand-crafted features, while the real-time WebSocket inference flow remains in place for streaming use.
 
 ---
 
@@ -16,53 +16,63 @@ The dataset used is in `combined.csv` and contains the following columns:
 - `Ch1 Env`: Envelope of sEMG Channel 1
 - `Action`: The class label representing a specific physical action
 
+Each row represents one timestamped sample in the recording. The offline pipeline groups 100 consecutive rows into one window for feature extraction and classification.
+
 ---
 
 ## 🧠 Machine Learning Pipeline
 
 ### 1. Preprocessing
-- **Feature Selection**: The model uses four input features: `Ch0 Act`, `Ch0 Env`, `Ch1 Act`, `Ch1 Env`.
-- **Scaling**: Features are normalized using `StandardScaler` for zero-mean and unit-variance scaling.
+- **Feature Selection**: The offline pipeline uses the four activation channels `Ch0 Act`, `Ch1 Act`, `Ch2 Act`, and `Ch3 Act`.
+- **Windowing**: Each sample is built from 100 rows, which matches `WINDOW_SIZE` in the current code.
+- **Feature Extraction**: The default feature set is `mav`, `rms`, `var`, `zc`, `ssc`.
+- **Scaling**: `StandardScaler` is used for the SVM pipeline.
 - **Label Encoding**: Action labels are encoded into integers using `LabelEncoder`.
 
 ### 2. Sequence Generation
-The time-series data is transformed into sequences using a sliding window approach:
+The old sequence-based CNN path is no longer used for the offline models. Instead, the data is grouped into fixed 100-row windows and converted into a single feature vector per window:
 
 ```python
-def create_sequences(X, y, seq_length=50):
-    Xs, ys = [], []
-    for i in range(len(X) - seq_length):
-        Xs.append(X[i:i+seq_length])
-        ys.append(y[i+seq_length])
-    return np.array(Xs), np.array(ys)
+def create_samples(df, window_size):
+  # take Ch0/Ch1/Ch2/Ch3 Act columns
+  # extract mav, rms, var, zc, ssc from each 100-row window
+  # return feature vectors and labels
 ```
 
-This provides temporal context to the model by allowing it to learn from a window of 50 past frames.
+This gives one feature vector per 100-row window rather than a sliding temporal sequence.
 
 ### 3. Model Architecture
 
-A 1D CNN is used to capture temporal patterns in the multivariate sEMG data. The architecture is:
+The offline classifier is a feed-forward MLP with the following structure:
 
-- `Conv1D(64, kernel_size=3, activation='relu')`
-- `MaxPooling1D(pool_size=2)`
-- `Conv1D(128, kernel_size=3, activation='relu')`
-- `GlobalAveragePooling1D()`
-- `Dense(64, activation='relu')`
-- `Dense(output_classes, activation='softmax')`
+- `Linear(input_dim, 128)`
+- `ReLU()`
+- `Dropout(0.1)`
+- `Linear(128, 64)`
+- `ReLU()`
+- `Dropout(0.1)`
+- `Linear(64, n_classes)`
 
-Loss: Sparse categorical cross-entropy  
+Loss: Cross-entropy  
 Optimizer: Adam
 
-The model is trained for 30 epochs with validation split.
+The SVM alternative uses `sklearn.svm.SVC` with scaled feature vectors.
+
+The MLP trainer uses an 80/20 train-test split, early stopping, and saves the best checkpoint.
 
 ---
 
 ## 💾 Saving Model Artifacts
 
-After training:
-- Model is saved as `semg_model.h5`
-- Feature scaler is saved as `scaler.pkl`
-- Label encoder is saved as `label_encoder.pkl`
+After offline training:
+- MLP model is saved as `semg_mlp.pth`
+- MLP label encoder is saved as `label_encoder_mlp.pkl`
+- MLP feature config is saved as `feature_config.pkl`
+- Calibrated MLP model is saved as `semg_mlp_calibrated.pth` when calibration is run
+- SVM model is saved as `semg_svm.pkl`
+- SVM scaler is saved as `semg_svm_scaler.pkl`
+- SVM label encoder is saved as `label_encoder_svm.pkl`
+- SVM feature config is saved as `feature_config_svm.pkl`
 
 ---
 
