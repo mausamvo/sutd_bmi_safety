@@ -6,11 +6,34 @@ function tryParseInt(value, base) {
   return isNaN(parsed) ? 0 : parsed;
 }
 
-module.exports = function connect(io, portPath) {
-  const port = new SerialPort({
-    path: portPath,
-    baudRate: 115200,
-  });
+module.exports = function connect(io, portPath, reconnect) {
+  // Default reconnect retries the same path; the caller can pass its own to
+  // re-resolve the port (e.g. re-detect a changed COM number).
+  const retry =
+    typeof reconnect === "function" ? reconnect : () => connect(io, portPath);
+
+  // A failed open emits both "error" and "close"; guard so we retry only once.
+  let reconnecting = false;
+  const scheduleReconnect = (err) => {
+    if (reconnecting) return;
+    reconnecting = true;
+    console.error("Serial error:", err);
+    console.log("INITIATING RECONNECT");
+    setTimeout(() => {
+      console.log("RECONNECTING TO ARDUINO");
+      retry();
+    }, 2000);
+  };
+
+  let port;
+  try {
+    port = new SerialPort({ path: portPath, baudRate: 115200 });
+  } catch (err) {
+    // Constructor can throw synchronously (e.g. bad path); retry instead of crash.
+    scheduleReconnect(err);
+    return;
+  }
+
   const parser = port.pipe(new ReadlineParser({ delimiter: "\n" }));
 
   console.log("CONNECT");
@@ -28,20 +51,6 @@ module.exports = function connect(io, portPath) {
     io.emit("adc_data", adc_data);
   });
 
-  port.on("error", (err) => {
-    console.error("Serial error:", err);
-    console.log("INITIATING RECONNECT");
-    setTimeout(function () {
-      console.log("RECONNECTING TO ARDUINO");
-      connect(io, portPath);
-    }, 2000);
-  });
-  port.on("close", (err) => {
-    console.error("Serial error:", err);
-    console.log("INITIATING RECONNECT");
-    setTimeout(function () {
-      console.log("RECONNECTING TO ARDUINO");
-      connect(io, portPath);
-    }, 2000);
-  });
+  port.on("error", scheduleReconnect);
+  port.on("close", scheduleReconnect);
 };

@@ -107,7 +107,9 @@ export default function Page() {
   const [minY, setMinY] = useState(-150);
   const socketRef = useRef();
   const dataPointsRef = useRef([]);
+  const sampleCountRef = useRef(0);
   const stopAutomationRef = useRef(false);
+  const [liveHz, setLiveHz] = useState(0);
   const [action, setAction] = useState("nothing");
   const [extraFilename, setExtraFilename] = useState("");
   const [duration, setDuration] = useState(1); // controls both view and record
@@ -143,16 +145,26 @@ export default function Page() {
     socket.on("adc_data", (d) => {
       if (paused) return;
       const entry = { timestamp: Date.now(), ...d };
+      sampleCountRef.current += 1; // counted per second for the live rate readout
+      // Append to the recording buffer here, NOT inside the setDataPoints
+      // updater: React treats updaters as pure and invokes them more than once
+      // (StrictMode double-invokes them in dev), which duplicated every row.
+      dataPointsRef.current.push(entry);
       setDataPoints((prev) => {
-        const cutoff = Date.now() - duration * 1000;
-        const next = [entry, ...prev].filter((x) => x.timestamp >= cutoff);
-        // Always append to ref so recording captures fresh data from click
-        dataPointsRef.current = [...dataPointsRef.current, entry];
-        return next;
+        const cutoff = entry.timestamp - duration * 1000;
+        return [entry, ...prev].filter((x) => x.timestamp >= cutoff);
       });
     });
     return () => socket.disconnect();
   }, [paused, duration]);
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      setLiveHz(sampleCountRef.current);
+      sampleCountRef.current = 0;
+    }, 1000);
+    return () => clearInterval(id);
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -485,7 +497,12 @@ export default function Page() {
         </div>
       )}
 
-      <h2>Live ADC (last {duration}s)</h2>
+      <h2>
+        Live ADC (last {duration}s){" "}
+        <span style={{ fontSize: "0.6em", fontWeight: "normal", color: "#555" }}>
+          — {liveHz} samples/s
+        </span>
+      </h2>
       <div style={{ marginTop: 12, marginBottom: 12 }}>
         <button
           onClick={() => setActiveTab("manual")}
