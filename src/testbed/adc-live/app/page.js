@@ -109,6 +109,8 @@ export default function Page() {
   const dataPointsRef = useRef([]);
   const sampleCountRef = useRef(0);
   const stopAutomationRef = useRef(false);
+  const pauseAutomationRef = useRef(false);
+  const [automationPaused, setAutomationPaused] = useState(false);
   const [liveHz, setLiveHz] = useState(0);
   const [action, setAction] = useState("nothing");
   const [extraFilename, setExtraFilename] = useState("");
@@ -371,6 +373,24 @@ export default function Page() {
     return !stopAutomationRef.current;
   };
 
+  // Blocks the automation loop while paused. Only called between captures, so a
+  // capture in progress always finishes before the pause takes effect.
+  const waitWhilePaused = async () => {
+    if (!pauseAutomationRef.current) return;
+    setAutomationPhase("paused");
+    setAutomationSecondsLeft(0);
+    setAutomationMessage("Paused. Press Resume to continue with the next capture.");
+    while (pauseAutomationRef.current && !stopAutomationRef.current) {
+      await new Promise((res) => setTimeout(res, 200));
+    }
+  };
+
+  const togglePauseAutomation = () => {
+    const next = !pauseAutomationRef.current;
+    pauseAutomationRef.current = next;
+    setAutomationPaused(next);
+  };
+
   const startAutomatedRecording = async () => {
     if (!saveSubfolder.trim()) {
       setAutomationMessage("Please set a save subfolder first.");
@@ -382,6 +402,8 @@ export default function Page() {
     }
 
     stopAutomationRef.current = false;
+    pauseAutomationRef.current = false;
+    setAutomationPaused(false);
     setAutomationRunning(true);
     setPaused(false);
     setAutomationMessage("Automated recording will start after cooldown.");
@@ -412,6 +434,15 @@ export default function Page() {
 
         setCurrentSet(setIndex);
 
+        // Hold here if paused (between captures), then continue with this set.
+        await waitWhilePaused();
+        if (stopAutomationRef.current) {
+          setAutomationRunning(false);
+          setAutomationPhase("idle");
+          setAutomationMessage("Automated recording cancelled.");
+          return;
+        }
+
         const prepOk = await waitSeconds(
           prepSeconds,
           "prep",
@@ -423,6 +454,30 @@ export default function Page() {
           setAutomationPhase("idle");
           setAutomationMessage("Automated recording cancelled.");
           return;
+        }
+
+        // If paused during prep, hold now — before the capture, not inside it.
+        if (pauseAutomationRef.current) {
+          await waitWhilePaused();
+          if (stopAutomationRef.current) {
+            setAutomationRunning(false);
+            setAutomationPhase("idle");
+            setAutomationMessage("Automated recording cancelled.");
+            return;
+          }
+          // Re-run prep so the subject gets the countdown again after resuming.
+          const prepOk2 = await waitSeconds(
+            prepSeconds,
+            "prep",
+            (s) =>
+              `${motion.label} (set ${setIndex}/${setsPerMotion}) starts in ${s}...`
+          );
+          if (!prepOk2) {
+            setAutomationRunning(false);
+            setAutomationPhase("idle");
+            setAutomationMessage("Automated recording cancelled.");
+            return;
+          }
         }
 
         setAutomationPhase("recording");
@@ -438,6 +493,15 @@ export default function Page() {
           fileActionLabel,
           false
         );
+      }
+
+      // Hold here if paused before moving to the next motion.
+      await waitWhilePaused();
+      if (stopAutomationRef.current) {
+        setAutomationRunning(false);
+        setAutomationPhase("idle");
+        setAutomationMessage("Automated recording cancelled.");
+        return;
       }
 
       const hasNextMotion = motionIndex < motions.length - 1;
@@ -458,6 +522,8 @@ export default function Page() {
       }
     }
 
+    pauseAutomationRef.current = false;
+    setAutomationPaused(false);
     setAutomationRunning(false);
     setAutomationPhase("done");
     setAutomationSecondsLeft(0);
@@ -469,6 +535,8 @@ export default function Page() {
 
   const stopAutomatedRecording = () => {
     stopAutomationRef.current = true;
+    pauseAutomationRef.current = false;
+    setAutomationPaused(false);
     setAutomationRunning(false);
     setAutomationPhase("idle");
     setAutomationSecondsLeft(0);
@@ -485,6 +553,7 @@ export default function Page() {
     prep: { label: "Get Ready", color: "#f59e0b" },
     recording: { label: "Recording", color: "#dc2626" },
     "between-motions": { label: "Next Motion", color: "#2563eb" },
+    paused: { label: "Paused", color: "#9333ea" },
     done: { label: "Done", color: "#16a34a" },
   }[automationPhase] || { label: automationPhase, color: "#6b7280" };
 
@@ -774,7 +843,24 @@ export default function Page() {
                   Start Automated Recording
                 </button>
               ) : (
-                <button onClick={stopAutomatedRecording}>Stop</button>
+                <>
+                  <button
+                    onClick={togglePauseAutomation}
+                    style={{
+                      marginRight: 8,
+                      background: automationPaused ? "#16a34a" : "#f59e0b",
+                      color: "#fff",
+                      border: "none",
+                      padding: "8px 16px",
+                      borderRadius: 8,
+                      fontWeight: 600,
+                      cursor: "pointer",
+                    }}
+                  >
+                    {automationPaused ? "Resume" : "Pause"}
+                  </button>
+                  <button onClick={stopAutomatedRecording}>Stop</button>
+                </>
               )}
               <label style={{ marginLeft: 16 }}>
                 <input
