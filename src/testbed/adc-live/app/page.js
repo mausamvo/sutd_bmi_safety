@@ -478,6 +478,16 @@ export default function Page() {
   const currentMotion = motions[currentMotionIndex] || motions[0];
   const manualFileAction = createActionFilename(action, extraFilename);
 
+  // Subject-facing label + color for the big status banner.
+  const phaseDisplay = {
+    idle: { label: "Idle", color: "#6b7280" },
+    cooldown: { label: "Get Ready", color: "#f59e0b" },
+    prep: { label: "Get Ready", color: "#f59e0b" },
+    recording: { label: "Recording", color: "#dc2626" },
+    "between-motions": { label: "Next Motion", color: "#2563eb" },
+    done: { label: "Done", color: "#16a34a" },
+  }[automationPhase] || { label: automationPhase, color: "#6b7280" };
+
   return (
     <main style={{ width: "90%", margin: "1rem auto" }}>
       {showNotification && (
@@ -782,35 +792,70 @@ export default function Page() {
               style={{
                 marginTop: 12,
                 background: "#fff",
-                borderRadius: 8,
-                border: "1px solid #d5d5d5",
-                padding: "0.8rem",
+                borderRadius: 12,
+                border: `4px solid ${phaseDisplay.color}`,
+                padding: "1.5rem",
+                textAlign: "center",
               }}
             >
-              <div>
-                <strong>Status:</strong> {automationPhase}
-                {automationSecondsLeft > 0 && ` (${automationSecondsLeft}s)`}
+              {/* Big subject-facing status: phase + countdown */}
+              <div
+                style={{
+                  fontSize: "3rem",
+                  fontWeight: 800,
+                  lineHeight: 1.1,
+                  color: phaseDisplay.color,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.02em",
+                }}
+              >
+                {phaseDisplay.label}
+                {automationSecondsLeft > 0 && (
+                  <span style={{ marginLeft: 16 }}>{automationSecondsLeft}s</span>
+                )}
               </div>
-              <div>
-                <strong>Current Motion:</strong> {currentMotion.label}
+
+              {/* Current motion */}
+              <div
+                style={{
+                  fontSize: "4.5rem",
+                  fontWeight: 900,
+                  lineHeight: 1.05,
+                  margin: "0.5rem 0",
+                  color: "#111",
+                }}
+              >
+                {currentMotion.label}
               </div>
-              <div>
-                <strong>Current Set:</strong> {currentSet}/{setsPerMotion}
+
+              {/* What to do right now */}
+              <div style={{ fontSize: "1.75rem", color: "#333", marginBottom: 8 }}>
+                {currentMotion.instructions}
               </div>
-              <div style={{ marginTop: 6 }}>
-                <strong>Instruction:</strong> {automationMessage}
+
+              <div style={{ fontSize: "1.5rem", color: "#555" }}>
+                Set {currentSet} / {setsPerMotion}
               </div>
-              <div style={{ marginTop: 6 }}>
-                <strong>Do this now:</strong> {currentMotion.instructions}
-              </div>
-              <div style={{ marginTop: 6 }}>
-                <strong>Save Folder:</strong> src/testbed/sutd_bmi_safety_data/{saveSubfolder}
-              </div>
-              {lastSavedFiles.length > 0 && (
-                <div style={{ marginTop: 6 }}>
-                  <strong>Last Saved:</strong> {lastSavedFiles.join(", ")}
+
+              {/* Operator details, kept small */}
+              <div
+                style={{
+                  marginTop: 16,
+                  paddingTop: 12,
+                  borderTop: "1px solid #e5e5e5",
+                  fontSize: "0.85rem",
+                  color: "#888",
+                  textAlign: "left",
+                }}
+              >
+                <div>{automationMessage}</div>
+                <div>
+                  Save Folder: src/testbed/sutd_bmi_safety_data/{saveSubfolder}
                 </div>
-              )}
+                {lastSavedFiles.length > 0 && (
+                  <div>Last Saved: {lastSavedFiles.join(", ")}</div>
+                )}
+              </div>
             </div>
           </div>
 
