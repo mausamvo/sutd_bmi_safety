@@ -82,3 +82,31 @@ CSV columns: `Timestamp, Ch0 Act, Ch0 Env, ..., Ch<N-1> Act, Ch<N-1> Env, Action
 | `start:test` | `TEST_MODE=true` — random data, no serial.              |
 | `build`      | `next build`.                                           |
 | `lint`       | ESLint (`lint:fix` to autofix).                         |
+
+## Live prediction tab
+
+Shows the gesture the per-subject model (`../new_ml_code`) predicts from the live stream,
+and lets you calibrate a model for the current person. The model runs in a Python
+sidecar that connects to this server as a socket.io client; run it next to the app:
+
+```bash
+cd ../new_ml_code
+python -m src.live serve            # loads the most recent model, if any
+```
+
+1. Record the person's baselines in the **Automated** tab (one subfolder per session).
+2. In **Live prediction → Calibrate**, name the model, tick those subfolders, press Train
+   (about 1–2 minutes for 4 sessions). It is saved to `new_ml_code/live_models/<name>.joblib`
+   and loaded straight away.
+3. Hold gestures and watch the prediction. If it is wrong, press the gesture you are
+   actually doing (labels the last second of windows), then **Apply** to retrain.
+
+Calibrate on the same day as testing, without moving the sensors: a model from another
+day's recordings loses much of its accuracy. The model needs all 4 channels, so
+`start:test` (2 random channels) only checks that the sidecar connects.
+
+### Replay mode (no hardware)
+
+`REPLAY="<file|folder|@list.txt>[;...]" node server.js` streams recorded CSVs as `adc_data`
+at their recorded rate, looping, and sends `replay_truth` before each one. The Live tab
+then scores its predictions against the known gesture ("Replay check").

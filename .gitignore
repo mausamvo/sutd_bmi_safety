@@ -179,3 +179,7 @@ node_modules
 
 .idea
 .vscode
+
+# Local sEMG recordings (not kept in git)
+src/testbed/ml/data_*/
+src/testbed/ml/combined.csv

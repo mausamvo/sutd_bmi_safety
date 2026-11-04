@@ -85,6 +85,7 @@ SoftwareSerial mySerial(0, 1);
 // The filters work only with fixed sample frequency of
 // `SAMPLE_FREQ_500HZ` or `SAMPLE_FREQ_1000HZ`.
 // Inputs at other sample rates will bypass
+// Flash both boards from this sketch so they match.
 SAMPLE_FREQUENCY sampleRate = SAMPLE_FREQ_500HZ;
 
 // Time interval for processing the input signal.
@@ -158,8 +159,9 @@ void loop()
 
   unsigned long timeElapsed = micros() - timeStamp;
 
+  // Pace in us; delay()'s whole-ms resolution is too coarse for these periods.
   if (interval > timeElapsed)
   {
-    delay((interval - timeElapsed) / 1000);
+    delayMicroseconds((unsigned int)(interval - timeElapsed));
   }
 }

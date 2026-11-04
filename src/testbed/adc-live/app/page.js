@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import io from "socket.io-client";
 import { Line } from "react-chartjs-2";
+import LivePanel from "./LivePanel";
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -107,7 +108,11 @@ export default function Page() {
   const [minY, setMinY] = useState(-150);
   const socketRef = useRef();
   const dataPointsRef = useRef([]);
+  const sampleCountRef = useRef(0);
   const stopAutomationRef = useRef(false);
+  const pauseAutomationRef = useRef(false);
+  const [automationPaused, setAutomationPaused] = useState(false);
+  const [liveHz, setLiveHz] = useState(0);
   const [action, setAction] = useState("nothing");
   const [extraFilename, setExtraFilename] = useState("");
   const [duration, setDuration] = useState(1); // controls both view and record
@@ -143,16 +148,26 @@ export default function Page() {
     socket.on("adc_data", (d) => {
       if (paused) return;
       const entry = { timestamp: Date.now(), ...d };
+      sampleCountRef.current += 1; // counted per second for the live rate readout
+      // Append to the recording buffer here, NOT inside the setDataPoints
+      // updater: React treats updaters as pure and invokes them more than once
+      // (StrictMode double-invokes them in dev), which duplicated every row.
+      dataPointsRef.current.push(entry);
       setDataPoints((prev) => {
-        const cutoff = Date.now() - duration * 1000;
-        const next = [entry, ...prev].filter((x) => x.timestamp >= cutoff);
-        // Always append to ref so recording captures fresh data from click
-        dataPointsRef.current = [...dataPointsRef.current, entry];
-        return next;
+        const cutoff = entry.timestamp - duration * 1000;
+        return [entry, ...prev].filter((x) => x.timestamp >= cutoff);
       });
     });
     return () => socket.disconnect();
   }, [paused, duration]);
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      setLiveHz(sampleCountRef.current);
+      sampleCountRef.current = 0;
+    }, 1000);
+    return () => clearInterval(id);
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -359,6 +374,24 @@ export default function Page() {
     return !stopAutomationRef.current;
   };
 
+  // Blocks the automation loop while paused. Only called between captures, so a
+  // capture in progress always finishes before the pause takes effect.
+  const waitWhilePaused = async () => {
+    if (!pauseAutomationRef.current) return;
+    setAutomationPhase("paused");
+    setAutomationSecondsLeft(0);
+    setAutomationMessage("Paused. Press Resume to continue with the next capture.");
+    while (pauseAutomationRef.current && !stopAutomationRef.current) {
+      await new Promise((res) => setTimeout(res, 200));
+    }
+  };
+
+  const togglePauseAutomation = () => {
+    const next = !pauseAutomationRef.current;
+    pauseAutomationRef.current = next;
+    setAutomationPaused(next);
+  };
+
   const startAutomatedRecording = async () => {
     if (!saveSubfolder.trim()) {
       setAutomationMessage("Please set a save subfolder first.");
@@ -370,6 +403,8 @@ export default function Page() {
     }
 
     stopAutomationRef.current = false;
+    pauseAutomationRef.current = false;
+    setAutomationPaused(false);
     setAutomationRunning(true);
     setPaused(false);
     setAutomationMessage("Automated recording will start after cooldown.");
@@ -400,6 +435,15 @@ export default function Page() {
 
         setCurrentSet(setIndex);
 
+        // Hold here if paused (between captures), then continue with this set.
+        await waitWhilePaused();
+        if (stopAutomationRef.current) {
+          setAutomationRunning(false);
+          setAutomationPhase("idle");
+          setAutomationMessage("Automated recording cancelled.");
+          return;
+        }
+
         const prepOk = await waitSeconds(
           prepSeconds,
           "prep",
@@ -411,6 +455,30 @@ export default function Page() {
           setAutomationPhase("idle");
           setAutomationMessage("Automated recording cancelled.");
           return;
+        }
+
+        // If paused during prep, hold now — before the capture, not inside it.
+        if (pauseAutomationRef.current) {
+          await waitWhilePaused();
+          if (stopAutomationRef.current) {
+            setAutomationRunning(false);
+            setAutomationPhase("idle");
+            setAutomationMessage("Automated recording cancelled.");
+            return;
+          }
+          // Re-run prep so the subject gets the countdown again after resuming.
+          const prepOk2 = await waitSeconds(
+            prepSeconds,
+            "prep",
+            (s) =>
+              `${motion.label} (set ${setIndex}/${setsPerMotion}) starts in ${s}...`
+          );
+          if (!prepOk2) {
+            setAutomationRunning(false);
+            setAutomationPhase("idle");
+            setAutomationMessage("Automated recording cancelled.");
+            return;
+          }
         }
 
         setAutomationPhase("recording");
@@ -426,6 +494,15 @@ export default function Page() {
           fileActionLabel,
           false
         );
+      }
+
+      // Hold here if paused before moving to the next motion.
+      await waitWhilePaused();
+      if (stopAutomationRef.current) {
+        setAutomationRunning(false);
+        setAutomationPhase("idle");
+        setAutomationMessage("Automated recording cancelled.");
+        return;
       }
 
       const hasNextMotion = motionIndex < motions.length - 1;
@@ -446,6 +523,8 @@ export default function Page() {
       }
     }
 
+    pauseAutomationRef.current = false;
+    setAutomationPaused(false);
     setAutomationRunning(false);
     setAutomationPhase("done");
     setAutomationSecondsLeft(0);
@@ -457,6 +536,8 @@ export default function Page() {
 
   const stopAutomatedRecording = () => {
     stopAutomationRef.current = true;
+    pauseAutomationRef.current = false;
+    setAutomationPaused(false);
     setAutomationRunning(false);
     setAutomationPhase("idle");
     setAutomationSecondsLeft(0);
@@ -465,6 +546,17 @@ export default function Page() {
 
   const currentMotion = motions[currentMotionIndex] || motions[0];
   const manualFileAction = createActionFilename(action, extraFilename);
+
+  // Subject-facing label + color for the big status banner.
+  const phaseDisplay = {
+    idle: { label: "Idle", color: "#6b7280" },
+    cooldown: { label: "Get Ready", color: "#f59e0b" },
+    prep: { label: "Get Ready", color: "#f59e0b" },
+    recording: { label: "Recording", color: "#dc2626" },
+    "between-motions": { label: "Next Motion", color: "#2563eb" },
+    paused: { label: "Paused", color: "#9333ea" },
+    done: { label: "Done", color: "#16a34a" },
+  }[automationPhase] || { label: automationPhase, color: "#6b7280" };
 
   return (
     <main style={{ width: "90%", margin: "1rem auto" }}>
@@ -485,7 +577,12 @@ export default function Page() {
         </div>
       )}
 
-      <h2>Live ADC (last {duration}s)</h2>
+      <h2>
+        Live ADC (last {duration}s){" "}
+        <span style={{ fontSize: "0.6em", fontWeight: "normal", color: "#555" }}>
+          — {liveHz} samples/s
+        </span>
+      </h2>
       <div style={{ marginTop: 12, marginBottom: 12 }}>
         <button
           onClick={() => setActiveTab("manual")}
@@ -516,6 +613,21 @@ export default function Page() {
           }}
         >
           Automated
+        </button>
+        <button
+          onClick={() => setActiveTab("live")}
+          disabled={recording || automationRunning}
+          style={{
+            marginLeft: 8,
+            background: activeTab === "live" ? "#0f4c81" : "#d9d9d9",
+            color: activeTab === "live" ? "#fff" : "#111",
+            border: "none",
+            padding: "8px 12px",
+            borderRadius: 8,
+            cursor: "pointer",
+          }}
+        >
+          Live prediction
         </button>
       </div>
 
@@ -747,7 +859,24 @@ export default function Page() {
                   Start Automated Recording
                 </button>
               ) : (
-                <button onClick={stopAutomatedRecording}>Stop</button>
+                <>
+                  <button
+                    onClick={togglePauseAutomation}
+                    style={{
+                      marginRight: 8,
+                      background: automationPaused ? "#16a34a" : "#f59e0b",
+                      color: "#fff",
+                      border: "none",
+                      padding: "8px 16px",
+                      borderRadius: 8,
+                      fontWeight: 600,
+                      cursor: "pointer",
+                    }}
+                  >
+                    {automationPaused ? "Resume" : "Pause"}
+                  </button>
+                  <button onClick={stopAutomatedRecording}>Stop</button>
+                </>
               )}
               <label style={{ marginLeft: 16 }}>
                 <input
@@ -765,35 +894,70 @@ export default function Page() {
               style={{
                 marginTop: 12,
                 background: "#fff",
-                borderRadius: 8,
-                border: "1px solid #d5d5d5",
-                padding: "0.8rem",
+                borderRadius: 12,
+                border: `4px solid ${phaseDisplay.color}`,
+                padding: "1.5rem",
+                textAlign: "center",
               }}
             >
-              <div>
-                <strong>Status:</strong> {automationPhase}
-                {automationSecondsLeft > 0 && ` (${automationSecondsLeft}s)`}
+              {/* Big subject-facing status: phase + countdown */}
+              <div
+                style={{
+                  fontSize: "3rem",
+                  fontWeight: 800,
+                  lineHeight: 1.1,
+                  color: phaseDisplay.color,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.02em",
+                }}
+              >
+                {phaseDisplay.label}
+                {automationSecondsLeft > 0 && (
+                  <span style={{ marginLeft: 16 }}>{automationSecondsLeft}s</span>
+                )}
               </div>
-              <div>
-                <strong>Current Motion:</strong> {currentMotion.label}
+
+              {/* Current motion */}
+              <div
+                style={{
+                  fontSize: "4.5rem",
+                  fontWeight: 900,
+                  lineHeight: 1.05,
+                  margin: "0.5rem 0",
+                  color: "#111",
+                }}
+              >
+                {currentMotion.label}
               </div>
-              <div>
-                <strong>Current Set:</strong> {currentSet}/{setsPerMotion}
+
+              {/* What to do right now */}
+              <div style={{ fontSize: "1.75rem", color: "#333", marginBottom: 8 }}>
+                {currentMotion.instructions}
               </div>
-              <div style={{ marginTop: 6 }}>
-                <strong>Instruction:</strong> {automationMessage}
+
+              <div style={{ fontSize: "1.5rem", color: "#555" }}>
+                Set {currentSet} / {setsPerMotion}
               </div>
-              <div style={{ marginTop: 6 }}>
-                <strong>Do this now:</strong> {currentMotion.instructions}
-              </div>
-              <div style={{ marginTop: 6 }}>
-                <strong>Save Folder:</strong> src/testbed/sutd_bmi_safety_data/{saveSubfolder}
-              </div>
-              {lastSavedFiles.length > 0 && (
-                <div style={{ marginTop: 6 }}>
-                  <strong>Last Saved:</strong> {lastSavedFiles.join(", ")}
+
+              {/* Operator details, kept small */}
+              <div
+                style={{
+                  marginTop: 16,
+                  paddingTop: 12,
+                  borderTop: "1px solid #e5e5e5",
+                  fontSize: "0.85rem",
+                  color: "#888",
+                  textAlign: "left",
+                }}
+              >
+                <div>{automationMessage}</div>
+                <div>
+                  Save Folder: src/testbed/sutd_bmi_safety_data/{saveSubfolder}
                 </div>
-              )}
+                {lastSavedFiles.length > 0 && (
+                  <div>Last Saved: {lastSavedFiles.join(", ")}</div>
+                )}
+              </div>
             </div>
           </div>
 
@@ -834,6 +998,8 @@ export default function Page() {
           </div>
         </section>
       )}
+
+      {activeTab === "live" && <LivePanel motions={motions} />}
 
       <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
         <div>
