@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import io from "socket.io-client";
 import { Line } from "react-chartjs-2";
+import LivePanel from "./LivePanel";
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -613,6 +614,21 @@ export default function Page() {
         >
           Automated
         </button>
+        <button
+          onClick={() => setActiveTab("live")}
+          disabled={recording || automationRunning}
+          style={{
+            marginLeft: 8,
+            background: activeTab === "live" ? "#0f4c81" : "#d9d9d9",
+            color: activeTab === "live" ? "#fff" : "#111",
+            border: "none",
+            padding: "8px 12px",
+            borderRadius: 8,
+            cursor: "pointer",
+          }}
+        >
+          Live prediction
+        </button>
       </div>
 
       <div style={{ marginBottom: 16, marginTop: 16 }}>
@@ -982,6 +998,8 @@ export default function Page() {
           </div>
         </section>
       )}
+
+      {activeTab === "live" && <LivePanel motions={motions} />}
 
       <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
         <div>

@@ -3,3 +3,5 @@ __pycache__/
 outputs/cache/
 outputs/
 .DS_Store
+data/
+live_models/

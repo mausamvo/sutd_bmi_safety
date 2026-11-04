@@ -21,3 +21,14 @@ The data is not in this repository. `DATA_ROOT` in `src/config.py` must point to
 `<subject>/<session>/<epoch>_<session>_<gesture>_set<n>_adc.csv`.
 
 `SEMG_TRAIN_ON=matched python3 -m src.run_pipeline` trains only on the baseline sessions recorded on the same setup as the attacks.
+
+## Live prediction
+
+`src/live.py` scores the live adc-live stream with a per-person ExtraTrees model, using the
+same resampling and features as training. See `../adc-live/README.md` ("Live prediction tab").
+
+```bash
+python -m src.live serve                      # sidecar for the adc-live web app
+python -m src.live train --name sri --eval <folders...>   # calibrate from the command line
+python -m src.live list
+```
